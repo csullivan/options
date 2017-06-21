@@ -18,12 +18,16 @@ if __name__ == "__main__":
     data = []
     for filename in args.input:
         chain = pandas.read_pickle(filename)
-        chain.set_index('Quote_Time', append=True, inplace=True)
-        chain = chain.swaplevel('Strike','Expiry').sort_index(level=0)
-        chain = chain.drop('JSON',1)
+        try:
+            chain.set_index('Quote_Time', append=True, inplace=True)
+            chain = chain.swaplevel('Strike','Expiry').sort_index(level=0)
+            chain = chain.drop('JSON',1)
+            chain.reset_index(level='Symbol')
+        except:
+            pass
         data.append(chain)
 
     combined = pandas.concat(data,axis=0).sort_index(level=0)
     combined = combined.drop_duplicates().sort_index(level=0)
-    combined = combined.reset_index(level='Symbol')
+    #combined = combined.reset_index(level='Symbol')
     combined.to_pickle(args.output)
