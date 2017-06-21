@@ -45,11 +45,11 @@ def exit_at(schedule_time):
         return
 
 if __name__ == "__main__":
-    scheduled_time = '09:25:00'
-    delay_until(scheduled_time)
+    while True:
+        try:
+            get_data()
+        except:
+            print("Connection refused.")
+            time.sleep(15)
+            print("Starting up again..")
 
-    #get_data()
-    timeout = 60.0
-    l = task.LoopingCall(get_data)
-    l.start(timeout)
-    reactor.run()
