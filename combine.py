@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+1#!/usr/bin/python3
 
 import pandas, os, sys
 import argparse
@@ -17,7 +17,11 @@ if __name__ == "__main__":
 
     data = []
     for filename in args.input:
-        chain = pandas.read_pickle(filename)
+        try:
+            chain = pandas.read_pickle(filename)
+        except:
+            print("Error opening file: "+filename)
+            continue
         try:
             chain.set_index('Quote_Time', append=True, inplace=True)
             chain = chain.swaplevel('Strike','Expiry').sort_index(level=0)
