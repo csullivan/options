@@ -1,0 +1,3 @@
+[submodule "trading_data"]
+	path = trading_data
+	url = https://sullx@bitbucket.org/sullx/trading_data.git
