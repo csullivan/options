@@ -71,7 +71,7 @@ class CandlestickGenerator:
 def improved_doji_pattern(last_close):
     """Generates a more realistic Doji pattern with a relative change."""
     # Small relative change for the open and close prices
-    open_close_diff = last_close * np.random.uniform(-0.0005, 0.0005)
+    open_close_diff = last_close * np.random.uniform(-0.0001, 0.0001)
     open_price = last_close + open_close_diff
     close_price = last_close - open_close_diff
     high = max(open_price, close_price) + np.random.uniform(0.5, 3)
@@ -95,7 +95,7 @@ def doji_trend(last_close):
     return trend_candles
 
 
-def doji_refined_trend(candle, bars=7):
+def doji_refined_trend(candle, bars=5):
     """Generates a trend with a proper initial breakout and periods of indecision."""
     _, doji_high, doji_low, _ = candle
     is_bullish = np.random.choice([True, False])
