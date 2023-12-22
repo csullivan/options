@@ -22,27 +22,71 @@ def get_rectangle_bounds_with_gap(timesteps, df, gap=0.1):
 
 
 class CandlestickPattern:
-    """Class to represent a candlestick pattern and its subsequent trend."""
+    """Class to represent a candlestick pattern and its subsequent pre and post trends."""
 
-    def __init__(self, name, pattern_function, trend_function):
+    def __init__(
+        self, name, pattern_function, pre_trend_function=None, post_trend_function=None
+    ):
         self.name = name
         self.pattern_function = pattern_function
-        self.trend_function = trend_function
+        self.pre_trend_function = pre_trend_function
+        self.post_trend_function = post_trend_function
+
+    def generate_pre_trend(self, last_close, bars=5):
+        """Generates the pre-trend before the pattern."""
+        return (
+            self.pre_trend_function(last_close, bars) if self.pre_trend_function else []
+        )
 
     def generate_pattern(self, last_close):
         """Generates the candlestick pattern using the last close value."""
         return self.pattern_function(last_close)
 
-    def generate_trend(self, last_candle):
-        """Generates the trend following the pattern."""
-        return self.trend_function(last_candle)
+    def generate_post_trend(self, last_candle, bars=5):
+        """Generates the post-trend following the pattern."""
+        return (
+            self.post_trend_function(last_candle, bars)
+            if self.post_trend_function
+            else []
+        )
 
 
 class CandlestickGenerator:
     def __init__(self, patterns):
         self.patterns = patterns
+        self.pre_trend_timesteps = []
         self.pattern_timesteps = []
-        self.trend_timesteps = []
+        self.post_trend_timesteps = []
+
+    def generate_data(self, num_candles, pattern_chance=0.2):
+        candles = []
+        i = 0
+        while i < num_candles:
+            if random.random() < pattern_chance and i > 0:
+                pattern = random.choice(self.patterns)
+                last_close = candles[-1][-1] if candles else None
+
+                pre_trend_candles = pattern.generate_pre_trend(last_close)
+                candles.extend(pre_trend_candles)
+                self.pre_trend_timesteps.append(range(i, i + len(pre_trend_candles)))
+                i += len(pre_trend_candles)
+
+                pattern_candles = pattern.generate_pattern(last_close)
+                candles.extend(pattern_candles)
+                self.pattern_timesteps.append(i)
+                i += len(pattern_candles)
+
+                last_candle = pattern_candles[-1]
+                post_trend_candles = pattern.generate_post_trend(last_candle)
+                candles.extend(post_trend_candles)
+                self.post_trend_timesteps.append(range(i, i + len(post_trend_candles)))
+                i += len(post_trend_candles)
+            else:
+                last_close = candles[-1][-1] if candles else None
+                candle = self.generate_random_candle(last_close)
+                candles.append(candle)
+                i += 1
+        return candles
 
     def generate_random_candle(self, last_close=None):
         if last_close is None:
@@ -52,29 +96,6 @@ class CandlestickGenerator:
         high = max(open_price, close_price) + np.random.uniform(0, 5)
         low = min(open_price, close_price) - np.random.uniform(0, 5)
         return open_price, high, low, close_price
-
-    def generate_data(self, num_candles, pattern_chance=0.2):
-        candles = []
-        i = 0
-        while i < num_candles:
-            if random.random() < pattern_chance and i > 0:
-                pattern = random.choice(self.patterns)
-                last_close = candles[-1][-1] if candles else None
-                pattern_candles = pattern.generate_pattern(last_close)
-                candles.extend(pattern_candles)
-                self.pattern_timesteps.append(i)
-                i += len(pattern_candles)
-                last_candle = pattern_candles[-1]
-                trend_candles = pattern.generate_trend(last_candle)
-                candles.extend(trend_candles)
-                self.trend_timesteps.append(range(i, i + len(trend_candles)))
-                i += len(trend_candles)
-            else:
-                last_close = candles[-1][-1] if candles else None
-                candle = self.generate_random_candle(last_close)
-                candles.append(candle)
-                i += 1
-        return candles
 
 
 def improved_doji_pattern(last_close):
@@ -167,17 +188,21 @@ def inverted_hammer_pattern(last_close):
     return [(open_price, high, low, close_price)]
 
 
-def hammer_trend():
+def hammer_pre_trend():
+    return lambda candle, bars=5: refined_trend(candle, bars, is_bullish=False)
+
+
+def hammer_post_trend():
     return lambda candle, bars=5: refined_trend(candle, bars, is_bullish=True)
 
 
-doji = CandlestickPattern("Doji", improved_doji_pattern, refined_trend)
-hammer = CandlestickPattern("Hammer", hammer_pattern, hammer_trend())
-inverted_hammer = CandlestickPattern(
-    "Inverted Hammer", inverted_hammer_pattern, hammer_trend()
+doji = CandlestickPattern("Doji", improved_doji_pattern, None, refined_trend)
+hammer = CandlestickPattern(
+    "Hammer", hammer_pattern, hammer_pre_trend(), hammer_post_trend()
 )
-
-
+inverted_hammer = CandlestickPattern(
+    "Inverted Hammer", inverted_hammer_pattern, hammer_pre_trend(), hammer_post_trend()
+)
 generator = CandlestickGenerator([doji])
 generated_data = generator.generate_data(100)
 
@@ -205,8 +230,14 @@ for i in range(len(df_candles)):
 
 
 for i, pattern_idx in enumerate(generator.pattern_timesteps):
-    trend_idxs = list(generator.trend_timesteps[i])
-    timesteps = [pattern_idx] + trend_idxs
+    pre_trend_idxs = (
+        list(generator.pre_trend_timesteps[i]) if generator.pre_trend_timesteps else []
+    )
+    post_trend_idxs = list(generator.post_trend_timesteps[i])
+
+    # Combining pre-trend, pattern, and post-trend time steps
+    timesteps = pre_trend_idxs + [pattern_idx] + post_trend_idxs
+
     start_time, end_time, min_price, max_price = get_rectangle_bounds_with_gap(
         timesteps, df_candles
     )
