@@ -5,7 +5,7 @@ import matplotlib.dates as mdates
 import pandas as pd
 
 
-def get_rectangle_bounds_with_gap(timesteps, df, gap=0.1):
+def get_rectangle_bounds_with_gap(timesteps, df, gap=0.05):
     min_price = df.loc[timesteps, "Low"].min()
     max_price = df.loc[timesteps, "High"].max()
     start_time = mdates.date2num(df["Time"][timesteps[0]])
@@ -32,10 +32,12 @@ class CandlestickPattern:
         self.pre_trend_function = pre_trend_function
         self.post_trend_function = post_trend_function
 
-    def generate_pre_trend(self, last_close, bars=5):
+    def generate_pre_trend(self, last_candle, bars=5):
         """Generates the pre-trend before the pattern."""
         return (
-            self.pre_trend_function(last_close, bars) if self.pre_trend_function else []
+            self.pre_trend_function(last_candle, bars)
+            if self.pre_trend_function
+            else []
         )
 
     def generate_pattern(self, last_close):
@@ -62,21 +64,25 @@ class CandlestickGenerator:
         candles = []
         i = 0
         while i < num_candles:
-            if random.random() < pattern_chance and i > 0:
-                pattern = random.choice(self.patterns)
-                last_close = candles[-1][-1] if candles else None
+            last_candle = candles[-1] if candles else None
 
-                pre_trend_candles = pattern.generate_pre_trend(last_close)
+            # Don't ever generate a pattern candle for the first candle
+            if last_candle and random.random() < pattern_chance and i > 0:
+                pattern = random.choice(self.patterns)
+
+                last_candle = candles[-1]
+                pre_trend_candles = pattern.generate_pre_trend(last_candle)
                 candles.extend(pre_trend_candles)
                 self.pre_trend_timesteps.append(range(i, i + len(pre_trend_candles)))
                 i += len(pre_trend_candles)
 
-                pattern_candles = pattern.generate_pattern(last_close)
+                last_candle = candles[-1]
+                pattern_candles = pattern.generate_pattern(last_candle[-1])
                 candles.extend(pattern_candles)
                 self.pattern_timesteps.append(i)
                 i += len(pattern_candles)
 
-                last_candle = pattern_candles[-1]
+                last_candle = candles[-1]
                 post_trend_candles = pattern.generate_post_trend(last_candle)
                 candles.extend(post_trend_candles)
                 self.post_trend_timesteps.append(range(i, i + len(post_trend_candles)))
@@ -109,33 +115,39 @@ def improved_doji_pattern(last_close):
     return [(open_price, high, low, close_price)]
 
 
-def refined_trend(candle, bars=5, is_bullish=None):
-    """Generates a trend with a proper initial breakout and periods of indecision."""
-    _, doji_high, doji_low, _ = candle
+def refined_trend(
+    candle, bars=5, breakout=True, is_bullish=None, probabilities=[0.5, 0.4, 0.1]
+):
+    _, prior_high, prior_low, _ = candle
 
     if is_bullish is None:
         is_bullish = np.random.choice([True, False])
 
     trend_candles = []
-    last_close = doji_high if is_bullish else doji_low
+    last_close = prior_high if is_bullish else prior_low
 
+    baseline = np.random.uniform(prior_low, prior_high)
     if is_bullish:
-        open_price = np.random.uniform(doji_low, doji_high)
-        close_price = doji_high + np.random.uniform(1, 5)
-        high = max(close_price, doji_high) + np.random.uniform(0, 2)
+        open_price = np.random.uniform(prior_low, prior_high)
+        if breakout:
+            baseline = prior_high
+        close_price = baseline + np.random.uniform(1, 5)
+        high = max(close_price, prior_high) + np.random.uniform(0, 2)
         low = open_price - np.random.uniform(0, 2)
     else:
-        open_price = np.random.uniform(doji_low, doji_high)
-        close_price = doji_low - np.random.uniform(1, 5)
+        open_price = np.random.uniform(prior_low, prior_high)
+        if breakout:
+            baseline = prior_low
+        close_price = baseline - np.random.uniform(1, 5)
         high = open_price + np.random.uniform(0, 2)
-        low = min(close_price, doji_low) - np.random.uniform(0, 2)
+        low = min(close_price, prior_low) - np.random.uniform(0, 2)
 
     trend_candles.append((open_price, high, low, close_price))
     last_close = close_price
 
     for _ in range(1, bars):
         candle_type = np.random.choice(
-            ["continuation", "indecision", "retracement"], p=[0.5, 0.4, 0.1]
+            ["continuation", "indecision", "retracement"], p=probabilities
         )
         if candle_type == "continuation":
             open_price = last_close
@@ -189,11 +201,15 @@ def inverted_hammer_pattern(last_close):
 
 
 def hammer_pre_trend():
-    return lambda candle, bars=5: refined_trend(candle, bars, is_bullish=False)
+    return lambda candle, bars=5: refined_trend(
+        candle, bars, is_bullish=False, probabilities=[0.7, 0.2, 0.1]
+    )
 
 
 def hammer_post_trend():
-    return lambda candle, bars=5: refined_trend(candle, bars, is_bullish=True)
+    return lambda candle, bars=5: refined_trend(
+        candle, bars, is_bullish=True, probabilities=[0.7, 0.2, 0.1]
+    )
 
 
 doji = CandlestickPattern("Doji", improved_doji_pattern, None, refined_trend)
@@ -203,8 +219,12 @@ hammer = CandlestickPattern(
 inverted_hammer = CandlestickPattern(
     "Inverted Hammer", inverted_hammer_pattern, hammer_pre_trend(), hammer_post_trend()
 )
-generator = CandlestickGenerator([doji])
-generated_data = generator.generate_data(100)
+# generator = CandlestickGenerator([doji])
+# generator = CandlestickGenerator([hammer])
+# generator = CandlestickGenerator([doji, hammer])
+# generator = CandlestickGenerator([inverted_hammer])
+generator = CandlestickGenerator([doji, hammer, inverted_hammer])
+generated_data = generator.generate_data(100, pattern_chance=0.1)
 
 
 df_candles = pd.DataFrame(generated_data, columns=["Open", "High", "Low", "Close"])
