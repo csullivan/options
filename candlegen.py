@@ -25,7 +25,11 @@ class CandlestickPattern:
     """Class to represent a candlestick pattern and its subsequent pre and post trends."""
 
     def __init__(
-        self, name, pattern_function, pre_trend_function=None, post_trend_function=None
+        self,
+        name,
+        pattern_function,
+        pre_trend_function=None,
+        post_trend_function=None,
     ):
         self.name = name
         self.pattern_function = pattern_function
@@ -54,11 +58,16 @@ class CandlestickPattern:
 
 
 class CandlestickGenerator:
-    def __init__(self, patterns):
+    def __init__(
+        self,
+        patterns,
+        initial_close_range=(100, 200),
+    ):
         self.patterns = patterns
         self.pre_trend_timesteps = []
         self.pattern_timesteps = []
         self.post_trend_timesteps = []
+        self.initial_close_range = initial_close_range
 
     def generate_data(self, num_candles, pattern_chance=0.2):
         candles = []
@@ -94,29 +103,32 @@ class CandlestickGenerator:
                 i += 1
         return candles
 
+    # def generate_random_candle(self, last_close=None):
+    #     if last_close is None:
+    #         last_close = np.random.uniform(100, 200)
+    #     open_price = np.random.uniform(last_close - 5, last_close + 5)
+    #     close_price = np.random.uniform(open_price - 10, open_price + 10)
+    #     high = max(open_price, close_price) + np.random.uniform(0, 5)
+    #     low = min(open_price, close_price) - np.random.uniform(0, 5)
+    #     return open_price, high, low, close_price
     def generate_random_candle(self, last_close=None):
         if last_close is None:
-            last_close = np.random.uniform(100, 200)
-        open_price = np.random.uniform(last_close - 5, last_close + 5)
-        close_price = np.random.uniform(open_price - 10, open_price + 10)
-        high = max(open_price, close_price) + np.random.uniform(0, 5)
-        low = min(open_price, close_price) - np.random.uniform(0, 5)
+            last_close = np.random.uniform(*self.initial_close_range)
+        price_variation = last_close * np.random.uniform(-0.05, 0.05)
+        open_price = last_close + price_variation
+        close_price = open_price + last_close * np.random.uniform(-0.025, 0.025)
+        high = max(open_price, close_price) + last_close * np.random.uniform(0, 0.02)
+        low = min(open_price, close_price) - last_close * np.random.uniform(0, 0.02)
         return open_price, high, low, close_price
 
 
-def improved_doji_pattern(last_close):
-    """Generates a more realistic Doji pattern with a relative change."""
-
-    open_close_diff = last_close * np.random.uniform(-0.0001, 0.0001)
-    open_price = last_close + open_close_diff
-    close_price = last_close - open_close_diff
-    high = max(open_price, close_price) + np.random.uniform(0.5, 3)
-    low = min(open_price, close_price) - np.random.uniform(0.5, 3)
-    return [(open_price, high, low, close_price)]
-
-
 def refined_trend(
-    candle, bars=5, breakout=True, is_bullish=None, probabilities=[0.5, 0.4, 0.1]
+    candle,
+    bars=5,
+    breakout=True,
+    is_bullish=None,
+    probabilities=[0.5, 0.4, 0.1],
+    relative_range=(0.01, 0.03),
 ):
     _, prior_high, prior_low, _ = candle
 
@@ -127,20 +139,28 @@ def refined_trend(
     last_close = prior_high if is_bullish else prior_low
 
     baseline = np.random.uniform(prior_low, prior_high)
+
+    def random_relative_value(base, min_percentage, max_percentage):
+        return base * np.random.uniform(min_percentage, max_percentage)
+
     if is_bullish:
         open_price = np.random.uniform(prior_low, prior_high)
         if breakout:
             baseline = prior_high
-        close_price = baseline + np.random.uniform(1, 5)
-        high = max(close_price, prior_high) + np.random.uniform(0, 2)
-        low = open_price - np.random.uniform(0, 2)
+        close_price = baseline + random_relative_value(baseline, *relative_range)
+        high = max(close_price, prior_high) + random_relative_value(
+            baseline, 0, relative_range[1] / 2
+        )
+        low = open_price - random_relative_value(baseline, 0, relative_range[1] / 2)
     else:
         open_price = np.random.uniform(prior_low, prior_high)
         if breakout:
             baseline = prior_low
-        close_price = baseline - np.random.uniform(1, 5)
-        high = open_price + np.random.uniform(0, 2)
-        low = min(close_price, prior_low) - np.random.uniform(0, 2)
+        close_price = baseline - random_relative_value(baseline, *relative_range)
+        high = open_price + random_relative_value(baseline, 0, relative_range[1] / 2)
+        low = min(close_price, prior_low) - random_relative_value(
+            baseline, 0, relative_range[1] / 2
+        )
 
     trend_candles.append((open_price, high, low, close_price))
     last_close = close_price
@@ -149,34 +169,61 @@ def refined_trend(
         candle_type = np.random.choice(
             ["continuation", "indecision", "retracement"], p=probabilities
         )
+        price_movement = random_relative_value(last_close, *relative_range)
+
         if candle_type == "continuation":
             open_price = last_close
-            close_price = open_price + np.random.uniform(1, 5) * (
-                1 if is_bullish else -1
-            )
+            close_price = open_price + price_movement * (1 if is_bullish else -1)
         elif candle_type == "indecision":
             open_price = last_close
-            close_price = open_price + np.random.uniform(-1, 1)
+            close_price = open_price + np.random.uniform(
+                -price_movement, price_movement
+            )
         else:
             open_price = last_close
+            close_price = open_price - price_movement * (1 if is_bullish else -1)
 
-            close_price = open_price - np.random.uniform(0, 2) * (
-                1 if is_bullish else -1
-            )
-
-        high = max(open_price, close_price) + np.random.uniform(0, 2)
-        low = min(open_price, close_price) - np.random.uniform(0, 2)
+        high = max(open_price, close_price) + random_relative_value(
+            max(open_price, close_price), 0, relative_range[1] / 2
+        )
+        low = min(open_price, close_price) - random_relative_value(
+            min(open_price, close_price), 0, relative_range[1] / 2
+        )
         trend_candles.append((open_price, high, low, close_price))
         last_close = close_price
 
     return trend_candles
 
 
-def hammer_pattern(last_close):
+def improved_doji_pattern(last_close, relative_range=(0.001, 0.015)):
+    """Generates a more realistic Doji pattern with a relative change."""
+
+    def random_relative_value(base, min_percentage, max_percentage):
+        return base * np.random.uniform(min_percentage, max_percentage)
+
+    open_close_diff = random_relative_value(last_close, -0.0001, 0.0001)
+    open_price = last_close + open_close_diff
+    close_price = last_close - open_close_diff
+    high = max(open_price, close_price) + random_relative_value(
+        last_close, relative_range[0], relative_range[1]
+    )
+    low = min(open_price, close_price) - random_relative_value(
+        last_close, relative_range[0], relative_range[1]
+    )
+
+    print([(open_price, high, low, close_price)])
+    return [(open_price, high, low, close_price)]
+
+
+def hammer_pattern(last_close, body_range=(0.005, 0.015)):
     """Generates a Hammer candlestick pattern."""
-    body_size = np.random.uniform(0.5, 1.5)
+
+    def random_relative_value(base, min_percentage, max_percentage):
+        return base * np.random.uniform(min_percentage, max_percentage)
+
+    body_size = random_relative_value(last_close, *body_range)
     lower_shadow = body_size * np.random.uniform(2, 3)
-    upper_shadow = np.random.uniform(0, 0.5)
+    upper_shadow = random_relative_value(last_close, 0, 0.005)
 
     close_price = last_close - body_size
     open_price = close_price + body_size
@@ -186,11 +233,15 @@ def hammer_pattern(last_close):
     return [(open_price, high, low, close_price)]
 
 
-def inverted_hammer_pattern(last_close):
+def inverted_hammer_pattern(last_close, body_range=(0.005, 0.015)):
     """Generates an Inverted Hammer candlestick pattern."""
-    body_size = np.random.uniform(0.5, 1.5)
+
+    def random_relative_value(base, min_percentage, max_percentage):
+        return base * np.random.uniform(min_percentage, max_percentage)
+
+    body_size = random_relative_value(last_close, *body_range)
     upper_shadow = body_size * np.random.uniform(2, 3)
-    lower_shadow = np.random.uniform(0, 0.5)
+    lower_shadow = random_relative_value(last_close, 0, 0.005)
 
     open_price = last_close - body_size
     close_price = open_price + body_size
@@ -219,11 +270,11 @@ hammer = CandlestickPattern(
 inverted_hammer = CandlestickPattern(
     "Inverted Hammer", inverted_hammer_pattern, hammer_pre_trend(), hammer_post_trend()
 )
-# generator = CandlestickGenerator([doji])
+generator = CandlestickGenerator([doji], initial_close_range=(10, 20))
 # generator = CandlestickGenerator([hammer])
 # generator = CandlestickGenerator([doji, hammer])
 # generator = CandlestickGenerator([inverted_hammer])
-generator = CandlestickGenerator([doji, hammer, inverted_hammer])
+# generator = CandlestickGenerator([doji, hammer, inverted_hammer])
 generated_data = generator.generate_data(100, pattern_chance=0.1)
 
 
